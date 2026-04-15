@@ -17,7 +17,7 @@ final class TranscriptionHistory: ObservableObject {
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
         ).first!
-        let dir = appSupport.appendingPathComponent("VoiceNote")
+        let dir = appSupport.appendingPathComponent("AIVoice")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         fileURL = dir.appendingPathComponent("history.json")
         load()

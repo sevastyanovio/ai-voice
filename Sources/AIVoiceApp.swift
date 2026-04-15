@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct VoiceNoteApp: App {
+struct AIVoiceApp: App {
     @StateObject private var appState = AppState()
 
     var body: some Scene {

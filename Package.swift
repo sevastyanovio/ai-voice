@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "VoiceNote",
+    name: "AIVoice",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "VoiceNote",
+            name: "AIVoice",
             path: "Sources"
         ),
         .testTarget(
-            name: "VoiceNoteTests",
-            dependencies: ["VoiceNote"],
+            name: "AIVoiceTests",
+            dependencies: ["AIVoice"],
             path: "Tests"
         )
     ]

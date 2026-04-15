@@ -1,6 +1,6 @@
 import XCTest
 import AVFoundation
-@testable import VoiceNote
+@testable import AIVoice
 
 @MainActor
 final class AudioPlayerTests: XCTestCase {

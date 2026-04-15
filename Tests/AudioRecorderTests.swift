@@ -1,5 +1,5 @@
 import XCTest
-@testable import VoiceNote
+@testable import AIVoice
 
 final class AudioRecorderTests: XCTestCase {
 

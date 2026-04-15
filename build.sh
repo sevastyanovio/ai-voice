@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 
-APP_NAME="VoiceNote"
+BINARY_NAME="AIVoice"
+APP_NAME="AI Voice"
 APP_BUNDLE="$APP_NAME.app"
+BUNDLE_ID="com.romantools.aivoice"
 
 echo "Building $APP_NAME..."
 
@@ -12,16 +14,16 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
-cp ".build/release/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
+cp ".build/release/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 cp Resources/Info.plist "$APP_BUNDLE/Contents/"
 
-codesign --force --sign - --entitlements Resources/VoiceNote.entitlements "$APP_BUNDLE"
+codesign --force --sign - --entitlements Resources/AIVoice.entitlements "$APP_BUNDLE"
 
 echo ""
 echo "Built: $APP_BUNDLE"
-echo "Run:   open $APP_BUNDLE"
+echo "Run:   open \"$APP_BUNDLE\""
 echo ""
-echo "To install: cp -r $APP_BUNDLE /Applications/"
+echo "To install: cp -r \"$APP_BUNDLE\" /Applications/"
 
 # Reset stale Accessibility grant so the app re-prompts with fresh CDHash
-tccutil reset Accessibility com.romantools.voicenote 2>/dev/null || true
+tccutil reset Accessibility "$BUNDLE_ID" 2>/dev/null || true

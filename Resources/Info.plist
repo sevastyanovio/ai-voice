@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>VoiceNote</string>
+    <string>AI Voice</string>
     <key>CFBundleIdentifier</key>
-    <string>com.romantools.voicenote</string>
+    <string>com.romantools.aivoice</string>
     <key>CFBundleVersion</key>
     <string>1.0</string>
     <key>CFBundleShortVersionString</key>
@@ -13,14 +13,14 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
-    <string>VoiceNote</string>
+    <string>AIVoice</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>VoiceNote needs microphone access to record audio for transcription.</string>
+    <string>AI Voice needs microphone access to record audio for transcription.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>VoiceNote needs to paste transcribed text into the active application.</string>
+    <string>AI Voice needs to paste transcribed text into the active application.</string>
 </dict>
 </plist>

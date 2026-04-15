@@ -23,8 +23,8 @@ A macOS menubar app for voice-to-text transcription. Record audio with a global 
 
 ```bash
 bash build.sh
-cp -r VoiceNote.app ~/Applications/
-open ~/Applications/VoiceNote.app
+cp -r AI\ Voice.app ~/Applications/
+open ~/Applications/AI\ Voice.app
 ```
 
 ## Setup
