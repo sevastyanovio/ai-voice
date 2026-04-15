@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+*.app/
+.env
+*.key
+*.pem
+*.p12
+.swiftpm/
+xcuserdata/
+DerivedData/
