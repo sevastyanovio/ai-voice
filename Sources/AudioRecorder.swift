@@ -53,11 +53,17 @@ final class AudioRecorder {
         }
 
         let inputNode = engine.inputNode
-        let hwFormat = inputNode.outputFormat(forBus: 0)
+        // AVAudioEngine's inputNode caches a default format (usually 44100 Hz Float32)
+        // that does NOT refresh after `AudioUnitSetProperty(kAudioOutputUnitProperty_CurrentDevice)`.
+        // Query the hardware's native sample rate directly via CoreAudio — using the stale
+        // node format causes installTap to fail with "formats don't match" and produces a
+        // silent WAV.
+        let deviceID = selectedDeviceID ?? Self.systemDefaultInputDeviceID()
+        let sampleRate = Self.deviceSampleRate(deviceID) ?? 48000
 
         let tapFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
-            sampleRate: hwFormat.sampleRate,
+            sampleRate: sampleRate,
             channels: 1,
             interleaved: false
         )!
@@ -67,7 +73,7 @@ final class AudioRecorder {
             AVLinearPCMBitDepthKey: 16,
             AVLinearPCMIsFloatKey: false,
             AVLinearPCMIsBigEndianKey: false,
-            AVSampleRateKey: hwFormat.sampleRate,
+            AVSampleRateKey: sampleRate,
             AVNumberOfChannelsKey: 1
         ]
 
@@ -152,6 +158,11 @@ final class AudioRecorder {
     }
 
     static func defaultInputDeviceName() -> String {
+        let deviceID = systemDefaultInputDeviceID()
+        return deviceName(deviceID) ?? "Microphone"
+    }
+
+    static func systemDefaultInputDeviceID() -> AudioDeviceID {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultInputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -161,8 +172,21 @@ final class AudioRecorder {
         var size = UInt32(MemoryLayout<AudioDeviceID>.size)
         guard AudioObjectGetPropertyData(
             AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID
-        ) == noErr else { return "Microphone" }
-        return deviceName(deviceID) ?? "Microphone"
+        ) == noErr else { return 0 }
+        return deviceID
+    }
+
+    static func deviceSampleRate(_ deviceID: AudioDeviceID) -> Float64? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var rate: Float64 = 0
+        var size = UInt32(MemoryLayout<Float64>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &rate) == noErr,
+              rate > 0 else { return nil }
+        return rate
     }
 
     private static func hasInputChannels(_ deviceID: AudioDeviceID) -> Bool {
