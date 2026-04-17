@@ -42,10 +42,11 @@ final class AppState: ObservableObject {
 
     @Published var selectedDeviceID: AudioDeviceID? {
         didSet {
-            if let id = selectedDeviceID {
-                UserDefaults.standard.set(Int(id), forKey: "inputDeviceID")
+            if let id = selectedDeviceID,
+               let device = inputDevices.first(where: { $0.id == id }) {
+                UserDefaults.standard.set(device.name, forKey: "inputDeviceName")
             } else {
-                UserDefaults.standard.removeObject(forKey: "inputDeviceID")
+                UserDefaults.standard.removeObject(forKey: "inputDeviceName")
             }
             recorder.selectedDeviceID = selectedDeviceID
         }
@@ -101,12 +102,13 @@ final class AppState: ObservableObject {
         self.selectedHotkey = HotkeyChoice(rawValue: hotkeyRaw) ?? .none
         self.customKeyCode = UInt16(UserDefaults.standard.integer(forKey: "customKeyCode"))
 
-        if let savedDevice = UserDefaults.standard.object(forKey: "inputDeviceID") as? Int {
-            self.selectedDeviceID = AudioDeviceID(savedDevice)
-            recorder.selectedDeviceID = AudioDeviceID(savedDevice)
-        }
-
         refreshInputDevices()
+
+        if let savedName = UserDefaults.standard.string(forKey: "inputDeviceName"),
+           let device = inputDevices.first(where: { $0.name == savedName }) {
+            self.selectedDeviceID = device.id
+            recorder.selectedDeviceID = device.id
+        }
         configureHotkey()
 
         // Prompt for Accessibility on launch (needed for auto-paste)
