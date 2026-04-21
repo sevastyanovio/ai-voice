@@ -216,6 +216,7 @@ final class AppState: ObservableObject {
                 // Debounce — don't start new recording if one just stopped
                 guard !self.isRecording, !self.isTranscribing else { return }
                 self.recordingSource = .hotkey
+                self.capturePreviousAppFromFrontmost()
                 self.startRecording()
             }
         }
@@ -381,16 +382,23 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func capturePreviousAppFromFrontmost() {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.processIdentifier != pid {
+            previousApp = front
+        }
+    }
+
     private func simulatePaste() {
         guard AXIsProcessTrusted() else {
             errorMessage = "Restart app after granting Accessibility"
             return
         }
 
-        let target = previousApp
-        target?.activate()
+        previousApp?.activate()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             let src = CGEventSource(stateID: .combinedSessionState)
             let vDown = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: true)
             let vUp = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: false)
