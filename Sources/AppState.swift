@@ -332,7 +332,14 @@ final class AppState: ObservableObject {
                 NSPasteboard.general.setString(text, forType: .string)
                 simulatePaste()
             } catch {
+                // Persist the recording in history with a placeholder so the user
+                // can retry transcription from the UI instead of losing it.
                 errorMessage = error.localizedDescription
+                history.add(
+                    text: "[Transcription failed — click retry] \(error.localizedDescription)",
+                    duration: lastDuration,
+                    audioFilename: filename
+                )
             }
             isTranscribing = false
             statusIslandController.dismiss()
