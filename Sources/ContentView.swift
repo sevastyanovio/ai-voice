@@ -262,14 +262,23 @@ struct ContentView: View {
                         }
 
                         if appState.selectedHotkey != .none && !appState.hasAccessibility {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.triangle.fill")
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(.orange)
+                                    Text("Needs Accessibility")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.orange)
+                                    Button("Grant") { appState.requestAccessibility() }
+                                        .font(.system(size: 10))
+                                    Button("Reset & Re-grant") { appState.resetAndRequestAccessibility() }
+                                        .font(.system(size: 10))
+                                }
+                                Text("If already granted but still showing — rebuild changed the signature. Click Relaunch.")
                                     .font(.system(size: 9))
-                                    .foregroundStyle(.orange)
-                                Text("Needs Accessibility")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.orange)
-                                Button("Grant") { appState.requestAccessibility() }
+                                    .foregroundStyle(.secondary)
+                                Button("Relaunch app") { appState.relaunchApp() }
                                     .font(.system(size: 10))
                             }
                         }

@@ -172,8 +172,39 @@ final class AppState: ObservableObject {
     func requestAccessibility() {
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
         AXIsProcessTrustedWithOptions(opts)
+        pollAccessibilityForGrant()
+    }
+
+    func resetAndRequestAccessibility() {
+        // Ad-hoc signed rebuilds change the CDHash, so the old TCC entry no
+        // longer matches. Reset the entry and re-prompt so the user's grant
+        // is fresh.
+        let task = Process()
+        task.launchPath = "/usr/bin/tccutil"
+        task.arguments = ["reset", "Accessibility", "com.romantools.aivoice"]
+        try? task.run()
+        task.waitUntilExit()
+        requestAccessibility()
+    }
+
+    private func pollAccessibilityForGrant(attemptsLeft: Int = 30) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            self?.checkAccessibility()
+            guard let self else { return }
+            self.checkAccessibility()
+            if !self.hasAccessibility && attemptsLeft > 0 {
+                self.pollAccessibilityForGrant(attemptsLeft: attemptsLeft - 1)
+            }
+        }
+    }
+
+    func relaunchApp() {
+        let url = Bundle.main.bundleURL
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
         }
     }
 
