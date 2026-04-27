@@ -348,6 +348,11 @@ final class AppState: ObservableObject {
         statusIslandController.show(mode: .transcribing)
 
         Task {
+            defer {
+                isTranscribing = false
+                statusIslandController.dismiss()
+            }
+
             do {
                 let lang = language.isEmpty ? nil : language
                 let text = try await whisperService.transcribe(
@@ -372,8 +377,6 @@ final class AppState: ObservableObject {
                     audioFilename: filename
                 )
             }
-            isTranscribing = false
-            statusIslandController.dismiss()
         }
     }
 
@@ -399,6 +402,11 @@ final class AppState: ObservableObject {
         statusIslandController.show(mode: .transcribing)
 
         Task {
+            defer {
+                isTranscribing = false
+                statusIslandController.dismiss()
+            }
+
             do {
                 let lang = language.isEmpty ? nil : language
                 let text = try await whisperService.transcribe(
@@ -415,8 +423,6 @@ final class AppState: ObservableObject {
             } catch {
                 errorMessage = error.localizedDescription
             }
-            isTranscribing = false
-            statusIslandController.dismiss()
         }
     }
 
