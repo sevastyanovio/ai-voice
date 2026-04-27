@@ -149,20 +149,17 @@ struct PulsingDot: View {
 // MARK: - Transcribing dots animation
 
 struct TranscribingDots: View {
-    @State private var phase = 0
+    private let interval: TimeInterval = 0.35
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<3, id: \.self) { i in
-                Circle()
-                    .fill(.white.opacity(phase == i ? 0.9 : 0.3))
-                    .frame(width: 4, height: 4)
-            }
-        }
-        .onAppear {
-            Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { _ in
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    phase = (phase + 1) % 3
+        TimelineView(.periodic(from: .now, by: interval)) { timeline in
+            let phase = Int(timeline.date.timeIntervalSinceReferenceDate / interval) % 3
+
+            HStack(spacing: 3) {
+                ForEach(0..<3, id: \.self) { i in
+                    Circle()
+                        .fill(.white.opacity(phase == i ? 0.9 : 0.3))
+                        .frame(width: 4, height: 4)
                 }
             }
         }

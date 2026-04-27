@@ -220,9 +220,16 @@ final class AudioRecorder {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var name: CFString = "" as CFString
-        var size = UInt32(MemoryLayout<CFString>.size)
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &name) == noErr else {
+        let namePointer = UnsafeMutablePointer<CFString?>.allocate(capacity: 1)
+        namePointer.initialize(to: nil)
+        defer {
+            namePointer.deinitialize(count: 1)
+            namePointer.deallocate()
+        }
+
+        var size = UInt32(MemoryLayout<CFString?>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, namePointer) == noErr,
+              let name = namePointer.pointee else {
             return nil
         }
         return name as String

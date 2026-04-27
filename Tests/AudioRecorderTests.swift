@@ -24,8 +24,8 @@ final class AudioRecorderTests: XCTestCase {
 
     func testAvailableInputDevicesReturnsArray() {
         let devices = AudioRecorder.availableInputDevices()
-        // Just verify it returns without crashing — count depends on hardware
-        XCTAssertTrue(devices is [InputDevice])
+        // Count depends on hardware; verify any returned devices are usable.
+        XCTAssertTrue(devices.allSatisfy { !$0.name.isEmpty })
     }
 
     func testDefaultInputDeviceNameReturnsNonEmpty() {

@@ -31,6 +31,14 @@ enum WhisperError: LocalizedError {
 
 final class WhisperService {
     private let endpoint = "https://api.openai.com/v1/audio/transcriptions"
+    private let session: URLSession
+
+    init() {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 45
+        config.timeoutIntervalForResource = 120
+        self.session = URLSession(configuration: config)
+    }
 
     func transcribe(audioURL: URL, apiKey: String, language: String?) async throws -> String {
         guard !apiKey.isEmpty else { throw WhisperError.noApiKey }
@@ -40,6 +48,7 @@ final class WhisperService {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 45
 
         let audioData = try Data(contentsOf: audioURL)
 
@@ -52,15 +61,15 @@ final class WhisperService {
         }
 
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.m4a\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: audio/m4a\r\n\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
         body.append(audioData)
         body.append("\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
         request.httpBody = body
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw WhisperError.invalidResponse
