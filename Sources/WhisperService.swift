@@ -1,5 +1,72 @@
 @preconcurrency import AVFoundation
 import Foundation
+import WhisperKit
+
+enum TranscriptionEngine: String, CaseIterable, Identifiable {
+    case openAI = "openAI"
+    case onDevice = "onDevice"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .openAI:
+            return "Whisper OAI"
+        case .onDevice:
+            return "Local Model"
+        }
+    }
+}
+
+enum CloudTranscriptionModel: String, CaseIterable, Identifiable {
+    case whisper = "whisper-1"
+
+    var id: String { rawValue }
+    var displayName: String { "Whisper OAI" }
+    var detail: String { "OpenAI Whisper API" }
+}
+
+enum LocalTranscriptionModel: String, CaseIterable, Identifiable {
+    case bestAccuracy = "large-v3-v20240930_626MB"
+    case fastLarge = "large-v3-v20240930_turbo_632MB"
+    case small = "small_216MB"
+    case base = "base"
+    case tiny = "tiny"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .bestAccuracy:
+            return "Best Accuracy"
+        case .fastLarge:
+            return "Fast Large"
+        case .small:
+            return "Small"
+        case .base:
+            return "Base"
+        case .tiny:
+            return "Tiny"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .bestAccuracy:
+            return "Whisper large-v3 Core ML, recommended for multilingual dictation"
+        case .fastLarge:
+            return "Large-v3 turbo, faster with slightly lower accuracy"
+        case .small:
+            return "Good for quick daily dictation on slower Macs"
+        case .base:
+            return "Lightweight fallback"
+        case .tiny:
+            return "Fastest model for testing"
+        }
+    }
+
+    var whisperKitModelName: String { rawValue }
+}
 
 struct WhisperResponse: Decodable {
     let text: String
@@ -17,17 +84,20 @@ enum WhisperError: LocalizedError {
     case noApiKey
     case httpError(Int, String)
     case invalidResponse
+    case emptyTranscription
     case audioCompressionFailed
     case audioFileTooLarge(Int64)
 
     var errorDescription: String? {
         switch self {
         case .noApiKey:
-            return "No API key. Open Settings (⌘,) to add your OpenAI key."
+            return "Add an OpenAI API key or switch Transcription to Local Model."
         case .httpError(let code, let message):
-            return "API error (\(code)): \(message)"
+            return "Transcription API error (\(code)): \(message)"
         case .invalidResponse:
-            return "Invalid response from API"
+            return "Invalid transcription response"
+        case .emptyTranscription:
+            return "No speech detected"
         case .audioCompressionFailed:
             return "Audio is too large and could not be compressed for upload"
         case .audioFileTooLarge(let bytes):
@@ -37,11 +107,16 @@ enum WhisperError: LocalizedError {
     }
 }
 
-final class WhisperService {
-    private let endpoint = "https://api.openai.com/v1/audio/transcriptions"
+actor WhisperService {
+    static let bestCloudModel: CloudTranscriptionModel = .whisper
+    static let bestLocalModel: LocalTranscriptionModel = .bestAccuracy
+
+    private let endpoint = URL(string: "https://api.openai.com/v1/audio/transcriptions")!
     private let directUploadLimitBytes = 20 * 1024 * 1024
     private let apiUploadLimitBytes: Int64 = 24 * 1024 * 1024
     private let session: URLSession
+    private var loadedModel: LocalTranscriptionModel?
+    private var pipe: WhisperKit?
 
     init() {
         let config = URLSessionConfiguration.ephemeral
@@ -50,7 +125,59 @@ final class WhisperService {
         self.session = URLSession(configuration: config)
     }
 
-    func transcribe(audioURL: URL, apiKey: String, language: String?) async throws -> String {
+    func transcribe(
+        audioURL: URL,
+        engine: TranscriptionEngine,
+        apiKey: String,
+        language: String?
+    ) async throws -> String {
+        switch engine {
+        case .openAI:
+            return try await transcribeWithOpenAI(
+                audioURL: audioURL,
+                apiKey: apiKey,
+                model: Self.bestCloudModel,
+                language: language
+            )
+        case .onDevice:
+            return try await transcribeOnDevice(
+                audioURL: audioURL,
+                model: Self.bestLocalModel,
+                language: language
+            )
+        }
+    }
+
+    private func transcribeOnDevice(
+        audioURL: URL,
+        model: LocalTranscriptionModel,
+        language: String?
+    ) async throws -> String {
+        let whisperKit = try await pipeline(for: model)
+        let options = DecodingOptions(
+            language: language,
+            skipSpecialTokens: true,
+            withoutTimestamps: true
+        )
+        let results = try await whisperKit.transcribe(
+            audioPath: audioURL.path,
+            decodeOptions: options
+        )
+        let text = results
+            .map(\.text)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !text.isEmpty else { throw WhisperError.emptyTranscription }
+        return text
+    }
+
+    private func transcribeWithOpenAI(
+        audioURL: URL,
+        apiKey: String,
+        model: CloudTranscriptionModel,
+        language: String?
+    ) async throws -> String {
         guard !apiKey.isEmpty else { throw WhisperError.noApiKey }
 
         let uploadURL = try await prepareAudioForUpload(audioURL)
@@ -62,7 +189,7 @@ final class WhisperService {
         }
 
         let boundary = UUID().uuidString
-        var request = URLRequest(url: URL(string: endpoint)!)
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -74,11 +201,10 @@ final class WhisperService {
         }
 
         var body = Data()
+        appendFormField(&body, boundary: boundary, name: "model", value: model.rawValue)
 
-        appendFormField(&body, boundary: boundary, name: "model", value: "whisper-1")
-
-        if let lang = language, !lang.isEmpty {
-            appendFormField(&body, boundary: boundary, name: "language", value: lang)
+        if let language, !language.isEmpty {
+            appendFormField(&body, boundary: boundary, name: "language", value: language)
         }
 
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
@@ -88,11 +214,9 @@ final class WhisperService {
         body.append(audioData)
         body.append("\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-
         request.httpBody = body
 
         let (data, response) = try await session.data(for: request)
-
         guard let httpResponse = response as? HTTPURLResponse else {
             throw WhisperError.invalidResponse
         }
@@ -105,7 +229,28 @@ final class WhisperService {
         }
 
         let whisperResponse = try JSONDecoder().decode(WhisperResponse.self, from: data)
-        return whisperResponse.text
+        let text = whisperResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw WhisperError.emptyTranscription }
+        return text
+    }
+
+    private func pipeline(for model: LocalTranscriptionModel) async throws -> WhisperKit {
+        if let pipe, loadedModel == model {
+            return pipe
+        }
+
+        let config = WhisperKitConfig(
+            model: model.whisperKitModelName,
+            verbose: false,
+            logLevel: .error,
+            prewarm: true,
+            load: true,
+            download: true
+        )
+        let newPipe = try await WhisperKit(config)
+        loadedModel = model
+        pipe = newPipe
+        return newPipe
     }
 
     private func appendFormField(_ body: inout Data, boundary: String, name: String, value: String) {

@@ -1,11 +1,11 @@
 # AI Voice
 
-A macOS menubar app for voice-to-text transcription. Record audio with a global hotkey, transcribe via OpenAI Whisper, and auto-paste the result into your active application.
+A macOS menubar app for voice-to-text transcription. Record audio with a global hotkey, transcribe with either OpenAI's transcription API or local WhisperKit/Core ML, and auto-paste the result into your active application.
 
 ## Features
 
 - Push-to-talk global hotkey (configurable)
-- Transcription via OpenAI Whisper API
+- Apple-style transcription setting: Whisper OAI or Local Model
 - Auto-paste into active app after transcription
 - Recording overlay with visual aura effect
 - Status island indicator during recording
@@ -17,7 +17,8 @@ A macOS menubar app for voice-to-text transcription. Record audio with a global 
 
 - macOS 14.0 (Sonoma) or later
 - Swift 5.9+
-- An OpenAI API key (for Whisper transcription)
+- OpenAI API key for Whisper OAI transcription
+- Network access for the first on-device model download; local transcription runs on device after models are cached
 
 ## Build & Install
 
@@ -29,12 +30,15 @@ open ~/Applications/AI\ Voice.app
 
 ## Setup
 
-1. Get an OpenAI API key from [platform.openai.com](https://platform.openai.com/api-keys)
-2. Launch the app — it appears in your menubar
-3. Open Settings and paste your API key
-4. Grant Accessibility and Microphone permissions when prompted
+1. Launch the app — it appears in your menubar
+2. Open Settings and choose Whisper OAI or Local Model
+3. Grant Accessibility and Microphone permissions when prompted
 
-> Your API key is stored locally on your machine. It is never sent anywhere except OpenAI's transcription endpoint.
+Defaults:
+- Whisper OAI: `whisper-1`.
+- Local Model: WhisperKit `large-v3-v20240930_626MB`, recommended for maximum multilingual accuracy on Apple Silicon.
+
+On-device mode does not send transcription audio to a remote API.
 
 ## Tests
 

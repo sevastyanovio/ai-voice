@@ -150,6 +150,20 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
 
+                if appState.currentRecord?.audioFilename != nil {
+                    Button(action: { appState.retranscribeCurrentWithWhisperOAI() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "cloud")
+                                .font(.system(size: 10))
+                            Text("Whisper OAI")
+                                .font(.system(size: 11))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Regenerate with Whisper OAI")
+                }
+
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -194,6 +208,9 @@ struct ContentView: View {
                             },
                             onRetranscribe: record.audioFilename != nil ? {
                                 appState.retranscribe(record: record)
+                            } : nil,
+                            onRetranscribeWithWhisperOAI: record.audioFilename != nil ? {
+                                appState.retranscribeWithWhisperOAI(record: record)
                             } : nil
                         )
                     }
@@ -209,16 +226,6 @@ struct ContentView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    settingsGroup("API Key") {
-                        SecureField("sk-…", text: $appState.apiKey)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12))
-                        Link("Get key at platform.openai.com",
-                             destination: URL(string: "https://platform.openai.com/api-keys")!)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                    }
-
                     settingsGroup("Language") {
                         Picker("", selection: $appState.language) {
                             Text("Auto-detect").tag("")
@@ -230,6 +237,33 @@ struct ContentView: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
+                    }
+
+                    settingsGroup("Transcription") {
+                        Picker("", selection: $appState.transcriptionEngine) {
+                            ForEach(TranscriptionEngine.allCases) { engine in
+                                Text(engine.displayName).tag(engine)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+
+                        if appState.transcriptionEngine == .openAI {
+                            SecureField("OpenAI API Key", text: $appState.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12))
+
+                            Text("Uses OpenAI Whisper API.")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                        } else {
+                            Text("Uses Whisper large-v3 Core ML, the best local model for multilingual dictation.")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                            Text("First use downloads the model; transcription audio stays on this Mac.")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                        }
                     }
 
                     settingsGroup("Push-to-talk") {
@@ -358,9 +392,13 @@ struct ContentView: View {
                     .frame(height: 1)
 
                 StatRow(icon: "clock.arrow.trianglehead.counterclockwise.rotate.90", label: "Time saved", value: formatDuration(h.timeSavedSeconds))
-                StatRow(icon: "dollarsign.circle", label: "API cost", value: String(format: "$%.3f", h.estimatedCostUSD))
+                StatRow(icon: appState.transcriptionEngine == .openAI ? "cloud" : "cpu",
+                        label: "Transcription",
+                        value: appState.transcriptionEngine.displayName)
 
-                Text("15 WPM effective typing · Whisper $0.006/min")
+                Text(appState.transcriptionEngine == .openAI
+                     ? "15 WPM effective typing · OpenAI transcription API"
+                     : "15 WPM effective typing · no remote transcription API")
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
             }
@@ -476,6 +514,7 @@ struct HistoryRow: View {
     let onPlay: (() -> Void)?
     let onCopy: () -> Void
     let onRetranscribe: (() -> Void)?
+    let onRetranscribeWithWhisperOAI: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -516,6 +555,16 @@ struct HistoryRow: View {
                 }
                 .buttonStyle(.plain)
                 .help("Retranscribe")
+            }
+
+            if let onRetranscribeWithWhisperOAI {
+                Button(action: onRetranscribeWithWhisperOAI) {
+                    Image(systemName: "cloud")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Regenerate with Whisper OAI")
             }
 
             Button(action: onCopy) {
@@ -610,4 +659,3 @@ final class HotkeyRecorderNSView: NSView {
         window?.makeFirstResponder(self)
     }
 }
-

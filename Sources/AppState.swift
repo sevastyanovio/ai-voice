@@ -24,6 +24,10 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(language, forKey: "whisperLanguage") }
     }
 
+    @Published var transcriptionEngine: TranscriptionEngine {
+        didSet { UserDefaults.standard.set(transcriptionEngine.rawValue, forKey: "transcriptionEngine") }
+    }
+
     @Published var selectedHotkey: HotkeyChoice {
         didSet {
             UserDefaults.standard.set(selectedHotkey.rawValue, forKey: "hotkey")
@@ -76,6 +80,7 @@ final class AppState: ObservableObject {
     private var recordingStartTime: Date?
     private var lockTime: Date?
     private var lastDuration: TimeInterval?
+    private var currentRecordID: UUID?
     private var previousApp: NSRunningApplication?
     private var workspaceObserver: Any?
 
@@ -85,6 +90,11 @@ final class AppState: ObservableObject {
             return device.name
         }
         return AudioRecorder.defaultInputDeviceName()
+    }
+
+    var currentRecord: TranscriptionRecord? {
+        guard let currentRecordID else { return nil }
+        return history.record(id: currentRecordID)
     }
 
     private static let audioDir: URL = {
@@ -97,6 +107,8 @@ final class AppState: ObservableObject {
     init() {
         self.apiKey = UserDefaults.standard.string(forKey: "whisperApiKey") ?? ""
         self.language = UserDefaults.standard.string(forKey: "whisperLanguage") ?? ""
+        let engineRaw = UserDefaults.standard.string(forKey: "transcriptionEngine") ?? TranscriptionEngine.openAI.rawValue
+        self.transcriptionEngine = TranscriptionEngine(rawValue: engineRaw) ?? .openAI
 
         let hotkeyRaw = UserDefaults.standard.string(forKey: "hotkey") ?? HotkeyChoice.none.rawValue
         self.selectedHotkey = HotkeyChoice(rawValue: hotkeyRaw) ?? .none
@@ -159,6 +171,7 @@ final class AppState: ObservableObject {
     func clear() {
         transcription = ""
         errorMessage = nil
+        currentRecordID = nil
     }
 
     func refreshInputDevices() {
@@ -357,12 +370,14 @@ final class AppState: ObservableObject {
                 let lang = language.isEmpty ? nil : language
                 let text = try await whisperService.transcribe(
                     audioURL: savedURL,
+                    engine: transcriptionEngine,
                     apiKey: apiKey,
                     language: lang
                 )
 
                 transcription = text
-                history.add(text: text, duration: lastDuration, audioFilename: filename)
+                let record = history.add(text: text, duration: lastDuration, audioFilename: filename)
+                currentRecordID = record.id
 
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
@@ -371,11 +386,12 @@ final class AppState: ObservableObject {
                 // Persist the recording in history with a placeholder so the user
                 // can retry transcription from the UI instead of losing it.
                 errorMessage = error.localizedDescription
-                history.add(
+                let record = history.add(
                     text: "[Transcription failed — click retry] \(error.localizedDescription)",
                     duration: lastDuration,
                     audioFilename: filename
                 )
+                currentRecordID = record.id
             }
         }
     }
@@ -387,6 +403,22 @@ final class AppState: ObservableObject {
     }
 
     func retranscribe(record: TranscriptionRecord) {
+        retranscribe(record: record, engine: transcriptionEngine)
+    }
+
+    func retranscribeWithWhisperOAI(record: TranscriptionRecord) {
+        retranscribe(record: record, engine: .openAI)
+    }
+
+    func retranscribeCurrentWithWhisperOAI() {
+        guard let currentRecord else {
+            errorMessage = "No saved audio for current transcription"
+            return
+        }
+        retranscribeWithWhisperOAI(record: currentRecord)
+    }
+
+    private func retranscribe(record: TranscriptionRecord, engine: TranscriptionEngine) {
         guard let filename = record.audioFilename else {
             errorMessage = "No audio file saved for this recording"
             return
@@ -411,11 +443,13 @@ final class AppState: ObservableObject {
                 let lang = language.isEmpty ? nil : language
                 let text = try await whisperService.transcribe(
                     audioURL: audioURL,
+                    engine: engine,
                     apiKey: apiKey,
                     language: lang
                 )
 
                 transcription = text
+                currentRecordID = record.id
                 history.update(id: record.id, newText: text)
 
                 NSPasteboard.general.clearContents()

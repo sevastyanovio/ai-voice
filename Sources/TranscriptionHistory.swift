@@ -23,7 +23,7 @@ final class TranscriptionHistory: ObservableObject {
         load()
     }
 
-    func add(text: String, duration: TimeInterval?, audioFilename: String? = nil) {
+    func add(text: String, duration: TimeInterval?, audioFilename: String? = nil) -> TranscriptionRecord {
         let record = TranscriptionRecord(
             id: UUID(),
             text: text,
@@ -33,12 +33,17 @@ final class TranscriptionHistory: ObservableObject {
         )
         records.insert(record, at: 0)
         save()
+        return record
     }
 
     func update(id: UUID, newText: String) {
         guard let idx = records.firstIndex(where: { $0.id == id }) else { return }
         records[idx].text = newText
         save()
+    }
+
+    func record(id: UUID) -> TranscriptionRecord? {
+        records.first { $0.id == id }
     }
 
     func delete(at offsets: IndexSet) {
@@ -74,11 +79,6 @@ final class TranscriptionHistory: ObservableObject {
     var timeSavedSeconds: Double {
         let typingSeconds = Double(totalWords) / 15.0 * 60.0
         return max(0, typingSeconds - totalRecordingSeconds)
-    }
-
-    /// Whisper API cost: $0.006 per minute
-    var estimatedCostUSD: Double {
-        totalRecordingSeconds / 60.0 * 0.006
     }
 
     private func load() {
