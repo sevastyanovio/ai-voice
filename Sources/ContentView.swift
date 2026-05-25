@@ -194,7 +194,7 @@ struct ContentView: View {
             .padding(.vertical, 8)
 
             ScrollView {
-                LazyVStack(spacing: 1) {
+                VStack(spacing: 1) {
                     ForEach(appState.history.records.prefix(5)) { record in
                         HistoryRow(
                             record: record,
@@ -216,8 +216,12 @@ struct ContentView: View {
                     }
                 }
             }
-            .frame(maxHeight: 160)
+            .frame(height: historyListHeight)
         }
+    }
+
+    private var historyListHeight: CGFloat {
+        CGFloat(min(appState.history.records.count, 5)) * 56
     }
 
     // MARK: – Settings
@@ -360,7 +364,7 @@ struct ContentView: View {
                 }
                 .padding(16)
             }
-            .frame(maxHeight: 360)
+            .frame(height: 360)
 
             sectionDivider
             bottomBar
