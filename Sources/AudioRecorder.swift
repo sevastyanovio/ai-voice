@@ -3,6 +3,7 @@ import CoreAudio
 
 struct InputDevice: Identifiable, Hashable {
     let id: AudioDeviceID
+    let uid: String
     let name: String
 }
 
@@ -153,7 +154,8 @@ final class AudioRecorder {
         return deviceIDs.compactMap { deviceID in
             guard hasInputChannels(deviceID) else { return nil }
             guard let name = deviceName(deviceID) else { return nil }
-            return InputDevice(id: deviceID, name: name)
+            let uid = deviceUID(deviceID) ?? "coreaudio-device-\(deviceID)"
+            return InputDevice(id: deviceID, uid: uid, name: name)
         }
     }
 
@@ -233,5 +235,27 @@ final class AudioRecorder {
             return nil
         }
         return name as String
+    }
+
+    static func deviceUID(_ deviceID: AudioDeviceID) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        let uidPointer = UnsafeMutablePointer<CFString?>.allocate(capacity: 1)
+        uidPointer.initialize(to: nil)
+        defer {
+            uidPointer.deinitialize(count: 1)
+            uidPointer.deallocate()
+        }
+
+        var size = UInt32(MemoryLayout<CFString?>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, uidPointer) == noErr,
+              let uid = uidPointer.pointee else {
+            return nil
+        }
+        return uid as String
     }
 }

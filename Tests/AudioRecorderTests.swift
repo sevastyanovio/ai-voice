@@ -26,6 +26,7 @@ final class AudioRecorderTests: XCTestCase {
         let devices = AudioRecorder.availableInputDevices()
         // Count depends on hardware; verify any returned devices are usable.
         XCTAssertTrue(devices.allSatisfy { !$0.name.isEmpty })
+        XCTAssertTrue(devices.allSatisfy { !$0.uid.isEmpty })
     }
 
     func testDefaultInputDeviceNameReturnsNonEmpty() {

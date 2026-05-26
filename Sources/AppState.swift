@@ -11,33 +11,43 @@ enum RecordingSource {
 
 @MainActor
 final class AppState: ObservableObject {
+    private enum DefaultsKey {
+        static let whisperApiKey = "whisperApiKey"
+        static let whisperLanguage = "whisperLanguage"
+        static let transcriptionEngine = "transcriptionEngine"
+        static let hotkey = "hotkey"
+        static let customKeyCode = "customKeyCode"
+        static let inputDeviceUID = "inputDeviceUID"
+        static let inputDeviceName = "inputDeviceName"
+    }
+
     @Published var isRecording = false
     @Published var isTranscribing = false
     @Published var transcription = ""
     @Published var errorMessage: String?
 
     @Published var apiKey: String {
-        didSet { UserDefaults.standard.set(apiKey, forKey: "whisperApiKey") }
+        didSet { UserDefaults.standard.set(apiKey, forKey: DefaultsKey.whisperApiKey) }
     }
 
     @Published var language: String {
-        didSet { UserDefaults.standard.set(language, forKey: "whisperLanguage") }
+        didSet { UserDefaults.standard.set(language, forKey: DefaultsKey.whisperLanguage) }
     }
 
     @Published var transcriptionEngine: TranscriptionEngine {
-        didSet { UserDefaults.standard.set(transcriptionEngine.rawValue, forKey: "transcriptionEngine") }
+        didSet { UserDefaults.standard.set(transcriptionEngine.rawValue, forKey: DefaultsKey.transcriptionEngine) }
     }
 
     @Published var selectedHotkey: HotkeyChoice {
         didSet {
-            UserDefaults.standard.set(selectedHotkey.rawValue, forKey: "hotkey")
+            UserDefaults.standard.set(selectedHotkey.rawValue, forKey: DefaultsKey.hotkey)
             configureHotkey()
         }
     }
 
     @Published var customKeyCode: UInt16 {
         didSet {
-            UserDefaults.standard.set(Int(customKeyCode), forKey: "customKeyCode")
+            UserDefaults.standard.set(Int(customKeyCode), forKey: DefaultsKey.customKeyCode)
             if selectedHotkey == .custom { configureHotkey() }
         }
     }
@@ -48,9 +58,11 @@ final class AppState: ObservableObject {
         didSet {
             if let id = selectedDeviceID,
                let device = inputDevices.first(where: { $0.id == id }) {
-                UserDefaults.standard.set(device.name, forKey: "inputDeviceName")
+                UserDefaults.standard.set(device.uid, forKey: DefaultsKey.inputDeviceUID)
+                UserDefaults.standard.set(device.name, forKey: DefaultsKey.inputDeviceName)
             } else {
-                UserDefaults.standard.removeObject(forKey: "inputDeviceName")
+                UserDefaults.standard.removeObject(forKey: DefaultsKey.inputDeviceUID)
+                UserDefaults.standard.removeObject(forKey: DefaultsKey.inputDeviceName)
             }
             recorder.selectedDeviceID = selectedDeviceID
         }
@@ -105,22 +117,16 @@ final class AppState: ObservableObject {
     }()
 
     init() {
-        self.apiKey = UserDefaults.standard.string(forKey: "whisperApiKey") ?? ""
-        self.language = UserDefaults.standard.string(forKey: "whisperLanguage") ?? ""
-        let engineRaw = UserDefaults.standard.string(forKey: "transcriptionEngine") ?? TranscriptionEngine.openAI.rawValue
+        self.apiKey = UserDefaults.standard.string(forKey: DefaultsKey.whisperApiKey) ?? ""
+        self.language = UserDefaults.standard.string(forKey: DefaultsKey.whisperLanguage) ?? ""
+        let engineRaw = UserDefaults.standard.string(forKey: DefaultsKey.transcriptionEngine) ?? TranscriptionEngine.openAI.rawValue
         self.transcriptionEngine = TranscriptionEngine(rawValue: engineRaw) ?? .openAI
 
-        let hotkeyRaw = UserDefaults.standard.string(forKey: "hotkey") ?? HotkeyChoice.none.rawValue
+        let hotkeyRaw = UserDefaults.standard.string(forKey: DefaultsKey.hotkey) ?? HotkeyChoice.none.rawValue
         self.selectedHotkey = HotkeyChoice(rawValue: hotkeyRaw) ?? .none
-        self.customKeyCode = UInt16(UserDefaults.standard.integer(forKey: "customKeyCode"))
+        self.customKeyCode = UInt16(UserDefaults.standard.integer(forKey: DefaultsKey.customKeyCode))
 
         refreshInputDevices()
-
-        if let savedName = UserDefaults.standard.string(forKey: "inputDeviceName"),
-           let device = inputDevices.first(where: { $0.name == savedName }) {
-            self.selectedDeviceID = device.id
-            recorder.selectedDeviceID = device.id
-        }
         configureHotkey()
 
         // Prompt for Accessibility on launch (needed for auto-paste)
@@ -176,6 +182,48 @@ final class AppState: ObservableObject {
 
     func refreshInputDevices() {
         inputDevices = AudioRecorder.availableInputDevices()
+        restoreSavedInputDeviceIfNeeded()
+    }
+
+    private func restoreSavedInputDeviceIfNeeded() {
+        if let selectedDeviceID,
+           inputDevices.contains(where: { $0.id == selectedDeviceID }) {
+            recorder.selectedDeviceID = selectedDeviceID
+            return
+        }
+
+        let savedUID = UserDefaults.standard.string(forKey: DefaultsKey.inputDeviceUID)
+        let savedName = UserDefaults.standard.string(forKey: DefaultsKey.inputDeviceName)
+
+        guard savedUID != nil || savedName != nil else {
+            selectedDeviceID = nil
+            return
+        }
+
+        let savedDevice = inputDevices.first { device in
+            if let savedUID, device.uid == savedUID { return true }
+            if let savedName, device.name == savedName { return true }
+            if let savedName,
+               Self.normalizedInputDeviceName(device.name) == Self.normalizedInputDeviceName(savedName) {
+                return true
+            }
+            return false
+        }
+
+        guard let savedDevice else {
+            recorder.selectedDeviceID = nil
+            return
+        }
+
+        selectedDeviceID = savedDevice.id
+    }
+
+    private static func normalizedInputDeviceName(_ name: String) -> String {
+        name.replacingOccurrences(
+            of: #" #\d+$"#,
+            with: "",
+            options: .regularExpression
+        )
     }
 
     func checkAccessibility() {

@@ -369,6 +369,9 @@ struct ContentView: View {
             sectionDivider
             bottomBar
         }
+        .onAppear {
+            appState.refreshInputDevices()
+        }
     }
 
     private func settingsGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
