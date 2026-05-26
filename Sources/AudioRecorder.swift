@@ -44,7 +44,7 @@ final class AudioRecorder {
         guard AVAudioApplication.shared.recordPermission == .granted else {
             throw AudioRecorderError.microphonePermissionDenied
         }
-        let url = FileManager.default.temporaryDirectory
+        let url = AIVoiceStorage.recordingStagingDirectory
             .appendingPathComponent("voicenote_\(UUID().uuidString).wav")
 
         let engine = AVAudioEngine()
@@ -84,6 +84,7 @@ final class AudioRecorder {
             commonFormat: .pcmFormatFloat32,
             interleaved: false
         )
+        AIVoiceStorage.protectFile(at: url)
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
             try? self?.audioFile?.write(from: buffer)

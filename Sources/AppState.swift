@@ -110,10 +110,7 @@ final class AppState: ObservableObject {
     }
 
     private static let audioDir: URL = {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("AIVoice/audio")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        AIVoiceStorage.audioDirectory
     }()
 
     init() {
@@ -401,8 +398,13 @@ final class AppState: ObservableObject {
         // Save audio permanently for retranscription
         let filename = "\(UUID().uuidString).wav"
         let savedURL = Self.audioDir.appendingPathComponent(filename)
-        try? FileManager.default.copyItem(at: result.url, to: savedURL)
-        try? FileManager.default.removeItem(at: result.url)
+        do {
+            try FileManager.default.moveItem(at: result.url, to: savedURL)
+        } catch {
+            try? FileManager.default.copyItem(at: result.url, to: savedURL)
+            try? FileManager.default.removeItem(at: result.url)
+        }
+        AIVoiceStorage.protectFile(at: savedURL)
 
         isTranscribing = true
         errorMessage = nil

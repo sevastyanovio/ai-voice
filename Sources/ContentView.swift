@@ -228,143 +228,140 @@ struct ContentView: View {
 
     private var settingsPage: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    settingsGroup("Language") {
-                        Picker("", selection: $appState.language) {
-                            Text("Auto-detect").tag("")
-                            Text("Ukrainian").tag("uk")
-                            Text("English").tag("en")
-                            Text("Russian").tag("ru")
-                            Text("German").tag("de")
-                            Text("Polish").tag("pl")
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
+            VStack(alignment: .leading, spacing: 16) {
+                settingsGroup("Language") {
+                    Picker("", selection: $appState.language) {
+                        Text("Auto-detect").tag("")
+                        Text("Ukrainian").tag("uk")
+                        Text("English").tag("en")
+                        Text("Russian").tag("ru")
+                        Text("German").tag("de")
+                        Text("Polish").tag("pl")
                     }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                }
 
-                    settingsGroup("Transcription") {
-                        Picker("", selection: $appState.transcriptionEngine) {
-                            ForEach(TranscriptionEngine.allCases) { engine in
-                                Text(engine.displayName).tag(engine)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-
-                        if appState.transcriptionEngine == .openAI {
-                            SecureField("OpenAI API Key", text: $appState.apiKey)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 12))
-
-                            Text("Uses OpenAI Whisper API.")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("Uses Whisper large-v3 Core ML, the best local model for multilingual dictation.")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                            Text("First use downloads the model; transcription audio stays on this Mac.")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
+                settingsGroup("Transcription") {
+                    Picker("", selection: $appState.transcriptionEngine) {
+                        ForEach(TranscriptionEngine.allCases) { engine in
+                            Text(engine.displayName).tag(engine)
                         }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
 
-                    settingsGroup("Push-to-talk") {
-                        Picker("", selection: $appState.selectedHotkey) {
-                            ForEach(HotkeyChoice.allCases.filter { $0 != .custom }, id: \.self) { choice in
-                                Text(choice.displayName).tag(choice)
-                            }
-                            if appState.selectedHotkey == .custom {
-                                Text(HotkeyManager.displayName(forKeyCode: appState.customKeyCode)).tag(HotkeyChoice.custom)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
+                    if appState.transcriptionEngine == .openAI {
+                        SecureField("OpenAI API Key", text: $appState.apiKey)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
 
-                        if appState.isRecordingHotkey {
-                            HotkeyRecorderView { keyCode in
-                                appState.finishRecordingHotkey(keyCode: keyCode)
-                            } onCancel: {
-                                appState.cancelRecordingHotkey()
-                            }
-                        } else {
-                            Button(appState.selectedHotkey == .custom
-                                   ? "Reassign key…"
-                                   : "Assign custom key…") {
-                                appState.startRecordingHotkey()
-                            }
-                            .font(.system(size: 11))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.blue)
-                        }
-
-                        if appState.selectedHotkey != .none && !appState.hasAccessibility {
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .font(.system(size: 9))
-                                        .foregroundStyle(.orange)
-                                    Text("Needs Accessibility")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.orange)
-                                    Button("Grant") { appState.requestAccessibility() }
-                                        .font(.system(size: 10))
-                                    Button("Reset & Re-grant") { appState.resetAndRequestAccessibility() }
-                                        .font(.system(size: 10))
-                                }
-                                Text("If already granted but still showing — rebuild changed the signature. Click Relaunch.")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.secondary)
-                                Button("Relaunch app") { appState.relaunchApp() }
-                                    .font(.system(size: 10))
-                            }
-                        }
-
-                        if appState.selectedHotkey != .none {
-                            Text("Hold → speak → release → auto-paste")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-
-                    if !appState.hasMicPermission {
-                        settingsGroup("Microphone") {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.red)
-                                Text("Microphone access not granted")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.red)
-                            }
-                            Text("Grant in System Settings > Privacy & Security > Microphone")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-
-                    settingsGroup("Input Device") {
-                        Picker("", selection: Binding(
-                            get: { appState.selectedDeviceID ?? 0 },
-                            set: { appState.selectedDeviceID = $0 == 0 ? nil : $0 }
-                        )) {
-                            Text("System default").tag(AudioDeviceID(0))
-                            ForEach(appState.inputDevices) { device in
-                                Text(device.name).tag(device.id)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-
-                        Text("Use built-in mic to avoid BT quality drop")
+                        Text("Uses OpenAI Whisper API.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text("Uses Whisper large-v3 Core ML, the best local model for multilingual dictation.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                        Text("First use downloads the model; transcription audio stays on this Mac.")
                             .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                     }
                 }
-                .padding(16)
+
+                settingsGroup("Push-to-talk") {
+                    Picker("", selection: $appState.selectedHotkey) {
+                        ForEach(HotkeyChoice.allCases.filter { $0 != .custom }, id: \.self) { choice in
+                            Text(choice.displayName).tag(choice)
+                        }
+                        if appState.selectedHotkey == .custom {
+                            Text(HotkeyManager.displayName(forKeyCode: appState.customKeyCode)).tag(HotkeyChoice.custom)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+
+                    if appState.isRecordingHotkey {
+                        HotkeyRecorderView { keyCode in
+                            appState.finishRecordingHotkey(keyCode: keyCode)
+                        } onCancel: {
+                            appState.cancelRecordingHotkey()
+                        }
+                    } else {
+                        Button(appState.selectedHotkey == .custom
+                               ? "Reassign key…"
+                               : "Assign custom key…") {
+                            appState.startRecordingHotkey()
+                        }
+                        .font(.system(size: 11))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.blue)
+                    }
+
+                    if appState.selectedHotkey != .none && !appState.hasAccessibility {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.orange)
+                                Text("Needs Accessibility")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.orange)
+                                Button("Grant") { appState.requestAccessibility() }
+                                    .font(.system(size: 10))
+                                Button("Reset & Re-grant") { appState.resetAndRequestAccessibility() }
+                                    .font(.system(size: 10))
+                            }
+                            Text("If already granted but still showing — rebuild changed the signature. Click Relaunch.")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                            Button("Relaunch app") { appState.relaunchApp() }
+                                .font(.system(size: 10))
+                        }
+                    }
+
+                    if appState.selectedHotkey != .none {
+                        Text("Hold → speak → release → auto-paste")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
+                if !appState.hasMicPermission {
+                    settingsGroup("Microphone") {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.red)
+                            Text("Microphone access not granted")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.red)
+                        }
+                        Text("Grant in System Settings > Privacy & Security > Microphone")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
+                settingsGroup("Input Device") {
+                    Picker("", selection: Binding(
+                        get: { appState.selectedDeviceID ?? 0 },
+                        set: { appState.selectedDeviceID = $0 == 0 ? nil : $0 }
+                    )) {
+                        Text("System default").tag(AudioDeviceID(0))
+                        ForEach(appState.inputDevices) { device in
+                            Text(device.name).tag(device.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+
+                    Text("Use built-in mic to avoid BT quality drop")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
             }
-            .frame(height: 360)
+            .padding(16)
 
             sectionDivider
             bottomBar
@@ -428,11 +425,11 @@ struct ContentView: View {
         HStack(spacing: 0) {
             if page == .main {
                 bottomButton(icon: "chart.bar", label: "Stats") {
-                    withAnimation(.easeInOut(duration: 0.15)) { page = .stats }
+                    page = .stats
                 }
                 bottomButton(icon: "gear", label: "Settings") {
                     appState.refreshInputDevices()
-                    withAnimation(.easeInOut(duration: 0.15)) { page = .settings }
+                    page = .settings
                 }
                 Spacer()
                 bottomButton(icon: "power", label: "Quit") {
@@ -440,7 +437,7 @@ struct ContentView: View {
                 }
             } else {
                 bottomButton(icon: "chevron.left", label: "Back") {
-                    withAnimation(.easeInOut(duration: 0.15)) { page = .main }
+                    page = .main
                 }
                 Spacer()
                 bottomButton(icon: "power", label: "Quit") {

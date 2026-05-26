@@ -11,15 +11,13 @@ struct TranscriptionRecord: Codable, Identifiable {
 final class TranscriptionHistory: ObservableObject {
     @Published private(set) var records: [TranscriptionRecord] = []
 
-    private let fileURL: URL
+    private let encryptedFileURL: URL
+    private let legacyFileURL: URL
 
-    init() {
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first!
-        let dir = appSupport.appendingPathComponent("AIVoice")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        fileURL = dir.appendingPathComponent("history.json")
+    init(directory: URL = AIVoiceStorage.appDirectory) {
+        AIVoiceStorage.ensureProtectedDirectory(directory)
+        encryptedFileURL = directory.appendingPathComponent("history.enc")
+        legacyFileURL = directory.appendingPathComponent("history.json")
         load()
     }
 
@@ -82,16 +80,47 @@ final class TranscriptionHistory: ObservableObject {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
+        if let encryptedData = try? Data(contentsOf: encryptedFileURL),
+           let decryptedData = try? SecureHistoryCodec.decrypt(encryptedData) {
+            decodeRecords(from: decryptedData)
+            return
+        }
+
+        guard let data = try? Data(contentsOf: legacyFileURL) else { return }
+        decodeRecords(from: data)
+        if save() {
+            try? FileManager.default.removeItem(at: legacyFileURL)
+        } else {
+            AIVoiceStorage.protectFile(at: legacyFileURL)
+        }
+    }
+
+    private func decodeRecords(from data: Data) {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         records = (try? decoder.decode([TranscriptionRecord].self, from: data)) ?? []
     }
 
-    private func save() {
+    @discardableResult
+    private func save() -> Bool {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(records) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        guard let data = try? encoder.encode(records),
+              let encryptedData = try? SecureHistoryCodec.encrypt(data) else {
+            return false
+        }
+
+        do {
+            try AIVoiceStorage.writeProtected(encryptedData, to: encryptedFileURL)
+        } catch {
+            return false
+        }
+
+        guard FileManager.default.fileExists(atPath: encryptedFileURL.path) else {
+            return false
+        }
+
+        try? FileManager.default.removeItem(at: legacyFileURL)
+        return true
     }
 }
