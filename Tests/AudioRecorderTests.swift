@@ -34,6 +34,13 @@ final class AudioRecorderTests: XCTestCase {
         XCTAssertFalse(name.isEmpty)
     }
 
+    func testInputFormatValidationRejectsUnavailableHardware() {
+        XCTAssertFalse(AudioRecorder.isUsableInputFormat(sampleRate: 0, channelCount: 1))
+        XCTAssertFalse(AudioRecorder.isUsableInputFormat(sampleRate: 48_000, channelCount: 0))
+        XCTAssertFalse(AudioRecorder.isUsableInputFormat(sampleRate: .infinity, channelCount: 1))
+        XCTAssertTrue(AudioRecorder.isUsableInputFormat(sampleRate: 48_000, channelCount: 1))
+    }
+
     func testStopRecordingWithoutStartReturnsNil() {
         let recorder = AudioRecorder()
         let result = recorder.stopRecording()

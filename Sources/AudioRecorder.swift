@@ -9,23 +9,47 @@ struct InputDevice: Identifiable, Hashable {
 
 enum AudioRecorderError: LocalizedError {
     case microphonePermissionDenied
+    case inputDeviceUnavailable
+    case inputFormatUnavailable
+    case recordingAlreadyInProgress
 
     var errorDescription: String? {
         switch self {
         case .microphonePermissionDenied:
             return "Microphone access denied — grant in System Settings > Privacy > Microphone"
+        case .inputDeviceUnavailable:
+            return "Selected microphone is unavailable — reconnect it or choose another input device"
+        case .inputFormatUnavailable:
+            return "Microphone is not ready yet — try again in a moment"
+        case .recordingAlreadyInProgress:
+            return "A recording is already in progress"
         }
     }
 }
 
 final class AudioRecorder {
+    /// AVAudioEngine invokes its tap on an audio thread while AppState changes
+    /// the handler and tears the recording down on the main thread. Keep the
+    /// shared references behind one lock so ARC never races on a closure or
+    /// AVAudioFile reference.
+    private let stateLock = NSLock()
     private var engine: AVAudioEngine?
     private var audioFile: AVAudioFile?
     private var recordingURL: URL?
     private var recordingStart: Date?
+    private var isAcceptingBuffers = false
+    private var storedSelectedDeviceID: AudioDeviceID?
+    private var storedAudioLevelHandler: ((Float) -> Void)?
 
-    var selectedDeviceID: AudioDeviceID?
-    var onAudioLevel: ((Float) -> Void)?
+    var selectedDeviceID: AudioDeviceID? {
+        get { withStateLock { storedSelectedDeviceID } }
+        set { withStateLock { storedSelectedDeviceID = newValue } }
+    }
+
+    var onAudioLevel: ((Float) -> Void)? {
+        get { withStateLock { storedAudioLevelHandler } }
+        set { withStateLock { storedAudioLevelHandler = newValue } }
+    }
 
     /// Request microphone permission. Returns true if granted.
     static func requestMicPermission() async -> Bool {
@@ -44,73 +68,46 @@ final class AudioRecorder {
         guard AVAudioApplication.shared.recordPermission == .granted else {
             throw AudioRecorderError.microphonePermissionDenied
         }
-        let url = AIVoiceStorage.recordingStagingDirectory
-            .appendingPathComponent("voicenote_\(UUID().uuidString).wav")
 
-        let engine = AVAudioEngine()
-
-        if let deviceID = selectedDeviceID {
-            try setInputDevice(deviceID, on: engine)
+        guard engine == nil else {
+            throw AudioRecorderError.recordingAlreadyInProgress
         }
 
-        let inputNode = engine.inputNode
-        // AVAudioEngine's inputNode caches a default format (usually 44100 Hz Float32)
-        // that does NOT refresh after `AudioUnitSetProperty(kAudioOutputUnitProperty_CurrentDevice)`.
-        // Query the hardware's native sample rate directly via CoreAudio — using the stale
-        // node format causes installTap to fail with "formats don't match" and produces a
-        // silent WAV.
+        let selectedDeviceID = selectedDeviceID
         let deviceID = selectedDeviceID ?? Self.systemDefaultInputDeviceID()
-        let sampleRate = Self.deviceSampleRate(deviceID) ?? 48000
-
-        let tapFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: false
-        )!
-
-        let wavSettings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: false,
-            AVSampleRateKey: sampleRate,
-            AVNumberOfChannelsKey: 1
-        ]
-
-        audioFile = try AVAudioFile(
-            forWriting: url,
-            settings: wavSettings,
-            commonFormat: .pcmFormatFloat32,
-            interleaved: false
-        )
-        AIVoiceStorage.protectFile(at: url)
-
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
-            try? self?.audioFile?.write(from: buffer)
-
-            guard let channelData = buffer.floatChannelData?[0] else { return }
-            let count = Int(buffer.frameLength)
-            var sum: Float = 0
-            for i in 0..<count { sum += channelData[i] * channelData[i] }
-            let rms = sqrt(sum / Float(count))
-            let normalized = min(1.0, rms * 10)
-            self?.onAudioLevel?(normalized)
+        guard deviceID != 0, Self.hasInputChannels(deviceID) else {
+            throw AudioRecorderError.inputDeviceUnavailable
         }
 
-        engine.prepare()
-        try engine.start()
-
-        self.engine = engine
-        self.recordingURL = url
-        self.recordingStart = Date()
+        do {
+            try startRecordingAttempt(selectedDeviceID: selectedDeviceID)
+        } catch {
+            // Bluetooth and USB microphones occasionally report an unavailable
+            // format immediately after wake. Recreate the input audio unit once
+            // after a short settle period instead of requiring a System Settings
+            // volume adjustment to wake the device.
+            Thread.sleep(forTimeInterval: 0.12)
+            try startRecordingAttempt(selectedDeviceID: selectedDeviceID)
+        }
     }
 
     func stopRecording() -> (url: URL, duration: TimeInterval)? {
-        engine?.inputNode.removeTap(onBus: 0)
-        engine?.stop()
+        let activeEngine = engine
         engine = nil
-        audioFile = nil
+
+        // Prevent a concurrent tap invocation from retaining or writing through
+        // an object that the main thread is about to release or move.
+        withStateLock {
+            isAcceptingBuffers = false
+            storedAudioLevelHandler = nil
+        }
+
+        activeEngine?.inputNode.removeTap(onBus: 0)
+        activeEngine?.stop()
+
+        withStateLock {
+            audioFile = nil
+        }
 
         guard let url = recordingURL else { return nil }
         let duration = recordingStart.map { Date().timeIntervalSince($0) } ?? 0
@@ -119,10 +116,124 @@ final class AudioRecorder {
         return (url, duration)
     }
 
+    private func startRecordingAttempt(selectedDeviceID: AudioDeviceID?) throws {
+        let url = AIVoiceStorage.recordingStagingDirectory
+            .appendingPathComponent("voicenote_\(UUID().uuidString).wav")
+        let engine = AVAudioEngine()
+        let inputNode = engine.inputNode
+        var tapInstalled = false
+
+        do {
+            if let selectedDeviceID {
+                try setInputDevice(selectedDeviceID, on: engine)
+            }
+
+            engine.prepare()
+
+            // Apple documents inputFormat(forBus:) as the hardware format to
+            // validate before recording. A zero sample rate or channel count can
+            // otherwise produce an AVAudioEngine exception rather than a throw.
+            let hardwareFormat = inputNode.inputFormat(forBus: 0)
+            guard Self.isUsableInputFormat(
+                sampleRate: hardwareFormat.sampleRate,
+                channelCount: hardwareFormat.channelCount
+            ) else {
+                throw AudioRecorderError.inputFormatUnavailable
+            }
+
+            let fileFormat = inputNode.outputFormat(forBus: 0)
+            guard Self.isUsableInputFormat(
+                sampleRate: fileFormat.sampleRate,
+                channelCount: fileFormat.channelCount
+            ) else {
+                throw AudioRecorderError.inputFormatUnavailable
+            }
+
+            let wavSettings: [String: Any] = [
+                AVFormatIDKey: Int(kAudioFormatLinearPCM),
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsBigEndianKey: false,
+                AVSampleRateKey: fileFormat.sampleRate,
+                AVNumberOfChannelsKey: fileFormat.channelCount
+            ]
+
+            let file = try AVAudioFile(
+                forWriting: url,
+                settings: wavSettings,
+                commonFormat: .pcmFormatFloat32,
+                interleaved: false
+            )
+            AIVoiceStorage.protectFile(at: url)
+
+            withStateLock {
+                audioFile = file
+                isAcceptingBuffers = true
+            }
+
+            // Passing nil uses AVAudioEngine's active device format. Supplying a
+            // separately queried CoreAudio format can force a stale Bluetooth
+            // format onto the tap and either fail or produce silent audio.
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
+                self?.consume(buffer)
+            }
+            tapInstalled = true
+
+            try engine.start()
+            guard engine.isRunning else {
+                throw AudioRecorderError.inputDeviceUnavailable
+            }
+
+            self.engine = engine
+            self.recordingURL = url
+            self.recordingStart = Date()
+        } catch {
+            if tapInstalled {
+                inputNode.removeTap(onBus: 0)
+            }
+            engine.stop()
+            withStateLock {
+                isAcceptingBuffers = false
+                audioFile = nil
+            }
+            try? FileManager.default.removeItem(at: url)
+            throw error
+        }
+    }
+
+    private func consume(_ buffer: AVAudioPCMBuffer) {
+        let audioLevelHandler: ((Float) -> Void)? = withStateLock {
+            guard isAcceptingBuffers, let audioFile else { return nil }
+            try? audioFile.write(from: buffer)
+            return storedAudioLevelHandler
+        }
+
+        guard let audioLevelHandler,
+              let channelData = buffer.floatChannelData?[0],
+              buffer.frameLength > 0 else {
+            return
+        }
+
+        let count = Int(buffer.frameLength)
+        var sum: Float = 0
+        for i in 0..<count { sum += channelData[i] * channelData[i] }
+        let rms = sqrt(sum / Float(count))
+        audioLevelHandler(min(1.0, rms * 10))
+    }
+
+    private func withStateLock<T>(_ operation: () -> T) -> T {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return operation()
+    }
+
     private func setInputDevice(_ deviceID: AudioDeviceID, on engine: AVAudioEngine) throws {
         var id = deviceID
+        guard let audioUnit = engine.inputNode.audioUnit else {
+            throw AudioRecorderError.inputDeviceUnavailable
+        }
         let status = AudioUnitSetProperty(
-            engine.inputNode.audioUnit!,
+            audioUnit,
             kAudioOutputUnitProperty_CurrentDevice,
             kAudioUnitScope_Global,
             0,
@@ -192,6 +303,10 @@ final class AudioRecorder {
         return rate
     }
 
+    static func isUsableInputFormat(sampleRate: Double, channelCount: AVAudioChannelCount) -> Bool {
+        sampleRate.isFinite && sampleRate > 0 && channelCount > 0
+    }
+
     private static func hasInputChannels(_ deviceID: AudioDeviceID) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreamConfiguration,
@@ -204,14 +319,45 @@ final class AudioRecorder {
             return false
         }
 
-        let bufferList = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: Int(size))
-        defer { bufferList.deallocate() }
+        // Output-only, aggregate, and temporarily disconnected devices can
+        // legitimately return an empty input-stream configuration. The old code
+        // allocated zero AudioBufferLists and then read the uninitialized header,
+        // which corrupted memory while Settings enumerated devices.
+        let headerSize = MemoryLayout<UInt32>.size
+        guard Int(size) >= headerSize else { return false }
 
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, bufferList) == noErr else {
+        let byteCount = Int(size)
+        let storage = UnsafeMutableRawPointer.allocate(
+            byteCount: byteCount,
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        storage.initializeMemory(as: UInt8.self, repeating: 0, count: byteCount)
+        defer { storage.deallocate() }
+
+        let bufferList = storage.assumingMemoryBound(to: AudioBufferList.self)
+        var returnedSize = size
+        guard AudioObjectGetPropertyData(
+            deviceID,
+            &address,
+            0,
+            nil,
+            &returnedSize,
+            bufferList
+        ) == noErr else {
             return false
         }
 
+        guard let buffersOffset = MemoryLayout<AudioBufferList>.offset(of: \AudioBufferList.mBuffers),
+              Int(returnedSize) >= buffersOffset else {
+            return false
+        }
+
+        let bufferCount = Int(bufferList.pointee.mNumberBuffers)
+        let maxBufferCount = (Int(returnedSize) - buffersOffset) / MemoryLayout<AudioBuffer>.stride
+        guard bufferCount <= maxBufferCount else { return false }
+
         let channels = UnsafeMutableAudioBufferListPointer(bufferList)
+            .prefix(bufferCount)
             .reduce(0) { $0 + Int($1.mNumberChannels) }
         return channels > 0
     }

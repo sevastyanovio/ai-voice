@@ -53,12 +53,13 @@ final class RecordingOverlayController {
 
     func show() {
         guard panel == nil else { return }
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
+                ?? NSScreen.main else {
+            return
+        }
 
-        let screenW = NSScreen.main?.frame.width ?? 3000
-        let w = screenW
-        let h: CGFloat = 1000
-
-        let size = CGSize(width: w, height: h)
+        let frame = screen.frame
+        let size = frame.size
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -73,18 +74,11 @@ final class RecordingOverlayController {
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let view = RecordingAuraView(state: state, viewWidth: w, viewHeight: h)
+        let view = RecordingAuraView(state: state, viewWidth: size.width, viewHeight: size.height)
         let hosting = NSHostingView(rootView: view)
         hosting.frame = NSRect(origin: .zero, size: size)
         panel.contentView = hosting
-
-        if let screen = NSScreen.main {
-            let f = screen.frame
-            panel.setFrameOrigin(CGPoint(
-                x: f.midX - w / 2,
-                y: f.maxY - h
-            ))
-        }
+        panel.setFrame(frame, display: true)
 
         state.start()
         panel.orderFront(nil)

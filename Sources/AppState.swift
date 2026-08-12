@@ -338,6 +338,7 @@ final class AppState: ObservableObject {
         recorder.onAudioLevel = { [weak self] level in
             DispatchQueue.main.async {
                 guard let self else { return }
+                guard self.isRecording else { return }
                 self.audioLevel = level
                 self.overlayController.state.setRaw(level)
             }
